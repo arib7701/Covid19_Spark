@@ -1,3 +1,4 @@
+import org.apache.spark.sql.expressions.Window
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.{DataFrame, SparkSession}
 
@@ -86,7 +87,6 @@ object CovidApp extends App {
   USDf.show()
   print(USDf.count())
 
-
   val countByCountryDf = combinedDf.groupBy(col("Country"), col("Date"))
       .agg(sum(col("Deaths")).as("Deaths"),
         sum(col("Confirmed")).as("Confirmed"),
@@ -96,5 +96,18 @@ object CovidApp extends App {
     countByCountryDf.show()
     print(countByCountryDf.count())
 
+  val windowSpec = Window.partitionBy("Country").orderBy("Date")
+
+  val USDiffDf = USDf
+    .withColumn("Difference By Day", col("Deaths") - when(lag("Deaths", 1).over(windowSpec).isNull, 0).otherwise(lag("Deaths", 1).over(windowSpec)))
+    .orderBy(desc("Date"))
+
+  USDiffDf.show()
+
+  val countByCountryDiffDf = countByCountryDf
+    .withColumn("Difference By Day", col("Deaths") - when(lag("Deaths", 1).over(windowSpec).isNull, 0).otherwise(lag("Deaths", 1).over(windowSpec)))
+    .orderBy(desc("Deaths"),desc("Date"))
+
+  countByCountryDiffDf.show()
 }
 
