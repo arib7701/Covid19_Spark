@@ -8,11 +8,11 @@ object CovidApp extends App {
     .master("local")
     .getOrCreate()
 
-  def getDateDf(df: DataFrame, flag: Boolean, updateColumnName: String): DataFrame = {
+  def getDateDf(df: DataFrame, flag: Boolean, updateColumnName: String, dateFormat: String): DataFrame = {
 
     // Get last time update as Date after converting to timestamp
     if(flag) {
-      val finalDf = df.withColumn("Date", from_unixtime(unix_timestamp(col(updateColumnName), "M/dd/yyyy"), "yyyy-MM-dd"))
+      val finalDf = df.withColumn("Date", from_unixtime(unix_timestamp(col(updateColumnName), dateFormat), "yyyy-MM-dd"))
       finalDf
     } else {
       val finalDf = df.withColumn("Date", to_date(col(updateColumnName)))
@@ -31,7 +31,7 @@ object CovidApp extends App {
     covidDfRaw.printSchema()
 
     // Get last time update as Date
-    val covidDfWithDate = getDateDf(covidDfRaw, needTimestampFlag, updateColumnName)
+    val covidDfWithDate = getDateDf(covidDfRaw, needTimestampFlag, updateColumnName, "M/dd/yyyy")
 
     // Convert Mainland China as China
     val covidDfFixedChina = covidDfWithDate
@@ -57,7 +57,7 @@ object CovidApp extends App {
     covidDfRaw.printSchema()
 
     // Get last time update as Date
-    val covidDfWithDate = getDateDf(covidDfRaw, needTimestampFlag, updateColumnName)
+    val covidDfWithDate = getDateDf(covidDfRaw, needTimestampFlag, updateColumnName, "M/dd/yy")
 
     // Convert column name
     val covidDfFixed = covidDfWithDate.withColumnRenamed("Country_Region", "Country")
@@ -75,6 +75,17 @@ object CovidApp extends App {
   val df3b = readAndCleanData2(spark, "schema_3/iso_date", "Last_Update", false)
 
   val combinedDf = df1a.unionByName(df1b).unionByName(df2).unionByName(df3a).unionByName(df3b).cache()
+
+
+  val countByCountryDf = combinedDf.groupBy(col("Country"), col("Date"))
+      .agg(sum(col("Deaths")).as("Deaths"),
+        sum(col("Confirmed")).as("Confirmed"),
+        sum(col("Recovered")).as("Recovered"))
+      .orderBy(col("Deaths").desc)
+
+    countByCountryDf.printSchema()
+    countByCountryDf.show()
+    print(countByCountryDf.count())
 
 }
 
