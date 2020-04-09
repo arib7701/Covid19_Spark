@@ -8,7 +8,19 @@ object CovidApp extends App {
     .master("local")
     .getOrCreate()
 
-  def readAndCleanData1(spark: SparkSession, folder: String, updateColumnName: String): DataFrame = {
+  def getDateDf(df: DataFrame, flag: Boolean, updateColumnName: String): DataFrame = {
+
+    // Get last time update as Date after converting to timestamp
+    if(flag) {
+      val finalDf = df.withColumn("Date", from_unixtime(unix_timestamp(col(updateColumnName), "M/dd/yyyy"), "yyyy-MM-dd"))
+      finalDf
+    } else {
+      val finalDf = df.withColumn("Date", to_date(col(updateColumnName)))
+      finalDf
+    }
+  }
+
+  def readAndCleanData1(spark: SparkSession, folder: String, updateColumnName: String, needTimestampFlag: Boolean): DataFrame = {
 
     val covidDfRaw = spark.read
       .option("inferSchema", "true")
@@ -19,8 +31,7 @@ object CovidApp extends App {
     covidDfRaw.printSchema()
 
     // Get last time update as Date
-    val covidDfWithDate = covidDfRaw
-      .withColumn("Date", to_date(col(updateColumnName)))
+    val covidDfWithDate = getDateDf(covidDfRaw, needTimestampFlag, updateColumnName)
 
     // Convert Mainland China as China
     val covidDfFixedChina = covidDfWithDate
@@ -35,7 +46,7 @@ object CovidApp extends App {
     covidDf
   }
 
-  def readAndCleanData2(spark: SparkSession, folder: String, updateColumnName: String): DataFrame = {
+  def readAndCleanData2(spark: SparkSession, folder: String, updateColumnName: String, needTimestampFlag: Boolean): DataFrame = {
 
     val covidDfRaw = spark.read
       .option("inferSchema", "true")
@@ -46,8 +57,7 @@ object CovidApp extends App {
     covidDfRaw.printSchema()
 
     // Get last time update as Date
-    val covidDfWithDate = covidDfRaw
-      .withColumn("Date", to_date(col(updateColumnName)))
+    val covidDfWithDate = getDateDf(covidDfRaw, needTimestampFlag, updateColumnName)
 
     // Convert column name
     val covidDfFixed = covidDfWithDate.withColumnRenamed("Country_Region", "Country")
@@ -58,12 +68,13 @@ object CovidApp extends App {
   }
 
 
-  val df1 = readAndCleanData1(spark, "schema_1", "Last Update")
-  val df2 = readAndCleanData1(spark, "schema_2", "Last Update")
-  val df3 = readAndCleanData2(spark, "schema_3", "Last_Update")
+  val df1a = readAndCleanData1(spark, "schema_1/no_iso_date", "Last Update", true)
+  val df1b = readAndCleanData1(spark, "schema_1/iso_date", "Last Update", false)
+  val df2 = readAndCleanData1(spark, "schema_2", "Last Update", false)
+  val df3a = readAndCleanData2(spark, "schema_3/no_iso_date", "Last_Update", true)
+  val df3b = readAndCleanData2(spark, "schema_3/iso_date", "Last_Update", false)
 
-  val combinedDf = df1.unionByName(df2).unionByName(df3).cache()
-  combinedDf.show()
-  print(combinedDf.count())
+  val combinedDf = df1a.unionByName(df1b).unionByName(df2).unionByName(df3a).unionByName(df3b).cache()
+
 }
 
