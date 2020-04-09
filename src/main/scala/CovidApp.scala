@@ -28,7 +28,7 @@ object CovidApp extends App {
       .csv(s"./data/CovidData/$folder/*.csv")
       .cache()
 
-    covidDfRaw.printSchema()
+   // covidDfRaw.printSchema()
 
     // Get last time update as Date
     val covidDfWithDate = getDateDf(covidDfRaw, needTimestampFlag, updateColumnName, "M/dd/yyyy")
@@ -54,7 +54,7 @@ object CovidApp extends App {
       .csv(s"./data/CovidData/$folder/*.csv")
       .cache()
 
-    covidDfRaw.printSchema()
+    //covidDfRaw.printSchema()
 
     // Get last time update as Date
     val covidDfWithDate = getDateDf(covidDfRaw, needTimestampFlag, updateColumnName, "M/dd/yy")
@@ -76,14 +76,23 @@ object CovidApp extends App {
 
   val combinedDf = df1a.unionByName(df1b).unionByName(df2).unionByName(df3a).unionByName(df3b).cache()
 
+  val USDf = combinedDf.groupBy(col("Country"), col("Date"))
+    .agg(sum(col("Deaths")).as("Deaths"),
+      sum(col("Confirmed")).as("Confirmed"),
+      sum(col("Recovered")).as("Recovered"))
+    .orderBy(col("Date").desc)
+    .select(col("Country"), col("Deaths"), col("Date")).where(col("Country") === "US")
+
+  USDf.show()
+  print(USDf.count())
+
 
   val countByCountryDf = combinedDf.groupBy(col("Country"), col("Date"))
       .agg(sum(col("Deaths")).as("Deaths"),
         sum(col("Confirmed")).as("Confirmed"),
         sum(col("Recovered")).as("Recovered"))
-      .orderBy(col("Deaths").desc)
+      .orderBy(col("Deaths").desc, col("Date"))
 
-    countByCountryDf.printSchema()
     countByCountryDf.show()
     print(countByCountryDf.count())
 
