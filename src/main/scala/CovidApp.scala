@@ -78,7 +78,7 @@ object CovidApp extends App {
 
     val populationDf = populationDfRaw.select(col("name"), col("pop2020"))
 
-    // Convert Name to match Covid Data
+    // Convert Country Name to match Covid Data
     val populationDfFixedUS = populationDf
       .withColumn("Country_Name",
         when(col("name") === "United States", "US")
@@ -110,17 +110,21 @@ object CovidApp extends App {
 
     val windowSpec = Window.partitionBy("Country").orderBy("Date")
 
-    val countByCountryDiffDeathsDf = df
-      .withColumn("Difference Deaths By Day", col("Deaths") - when(lag("Deaths", 1).over(windowSpec).isNull, 0).otherwise(lag("Deaths", 1).over(windowSpec)))
-      .orderBy(desc("Deaths"), desc("Date"))
-
-    val countByCountryDiffConfirmedDf = countByCountryDiffDeathsDf
+    df.withColumn("Difference Deaths By Day", col("Deaths") - when(lag("Deaths", 1).over(windowSpec).isNull, 0).otherwise(lag("Deaths", 1).over(windowSpec)))
       .withColumn("Difference Confirmed By Day", col("Confirmed") - when(lag("Confirmed", 1).over(windowSpec).isNull, 0).otherwise(lag("Confirmed", 1).over(windowSpec)))
-      .orderBy(desc("Deaths"), desc("Date"))
-
-    countByCountryDiffConfirmedDf
       .withColumn("Difference Recovered By Day", col("Recovered") - when(lag("Recovered", 1).over(windowSpec).isNull, 0).otherwise(lag("Recovered", 1).over(windowSpec)))
       .orderBy(desc("Deaths"), desc("Date"))
+  }
+
+  def joinCovidAndPopulationData(covidDf: DataFrame, popDf: DataFrame): DataFrame = {
+
+    covidDf.join(popDf, covidDf.col("Country") === popDf.col("Country_Name"), "inner").drop("Country_Name")
+  }
+
+  def calculateCasesPerMillion(df: DataFrame) : DataFrame = {
+
+    df.withColumn("Deaths Cases Per 1M", round(col("Deaths") / col("Population") * 1000, 3))
+      .withColumn("Confirmed Cases Per 1M", round(col("Confirmed") / col("Population") * 1000, 3))
   }
 
   val df1a = readAndCleanData1(spark, "schema_1/no_iso_date", "Last Update", true)
@@ -137,10 +141,10 @@ object CovidApp extends App {
 
   val populationDf = readAndCleanPopulationData(spark)
 
-  val dfDiffWithPop = dfDiff.join(populationDf, dfDiff.col("Country") === populationDf.col("Country_Name"), "inner").drop("Country_Name")
+  val dfDiffWithPop = joinCovidAndPopulationData(dfDiff, populationDf)
 
-  //dfDiffWithPop.show()
+  val dfDiffWithCasesPerMillions = calculateCasesPerMillion(dfDiffWithPop)
 
-  dfDiffWithPop.filter(col("Country") === "France").show()
+  dfDiffWithCasesPerMillions.show()
 }
 
