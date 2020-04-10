@@ -68,6 +68,60 @@ object CovidApp extends App {
     covidDf
   }
 
+  def readAndCleanPopulationData(spark: SparkSession): DataFrame = {
+
+    val populationDfRaw = spark.read
+      .option("inferSchema", "true")
+      .option("header", "true")
+      .csv(s"./data/PopulationData/world_population.csv")
+      .cache()
+
+    val populationDf = populationDfRaw.select(col("name"), col("pop2020"))
+
+    // Convert Name to match Covid Data
+    val populationDfFixedUS = populationDf
+      .withColumn("Country_Name",
+        when(col("name") === "United States", "US")
+              .otherwise(when(col("name") === "Swaziland", "Eswatini")
+                .otherwise(when(col("name") === "Macedonia", "North Macedonia")
+                  .otherwise(when(col("name") === "DR Congo", "Congo (Kinshasa)")
+                    .otherwise(when(col("name") === "Republic of the Congo", "Congo (Brazzaville")
+                          .otherwise(when(col("name") === "Moldova", "Republic of Moldova")
+                              .otherwise(when(col("name") === "North Korea", "Republic of Korea")
+                                .otherwise(when(col("name") === "Ivory Coast", "Cote d'Ivoire")
+                                  .otherwise(when(col("name") === "Czech Republic", "Czechia")
+                                      .otherwise(col("name")))))))))))
+          .drop("name")
+
+          // Convert column name
+          populationDfFixedUS.withColumnRenamed("pop2020", "Population")
+  }
+
+  def aggregateByCountryByDate(df: DataFrame): DataFrame = {
+
+    df.groupBy(col("Country"), col("Date"))
+      .agg(sum(col("Deaths")).as("Deaths"),
+        sum(col("Confirmed")).as("Confirmed"),
+        sum(col("Recovered")).as("Recovered"))
+      .orderBy(col("Deaths").desc, col("Date"))
+  }
+
+  def calculateDifferenceBetweenDays(df: DataFrame): DataFrame = {
+
+    val windowSpec = Window.partitionBy("Country").orderBy("Date")
+
+    val countByCountryDiffDeathsDf = df
+      .withColumn("Difference Deaths By Day", col("Deaths") - when(lag("Deaths", 1).over(windowSpec).isNull, 0).otherwise(lag("Deaths", 1).over(windowSpec)))
+      .orderBy(desc("Deaths"), desc("Date"))
+
+    val countByCountryDiffConfirmedDf = countByCountryDiffDeathsDf
+      .withColumn("Difference Confirmed By Day", col("Confirmed") - when(lag("Confirmed", 1).over(windowSpec).isNull, 0).otherwise(lag("Confirmed", 1).over(windowSpec)))
+      .orderBy(desc("Deaths"), desc("Date"))
+
+    countByCountryDiffConfirmedDf
+      .withColumn("Difference Recovered By Day", col("Recovered") - when(lag("Recovered", 1).over(windowSpec).isNull, 0).otherwise(lag("Recovered", 1).over(windowSpec)))
+      .orderBy(desc("Deaths"), desc("Date"))
+  }
 
   val df1a = readAndCleanData1(spark, "schema_1/no_iso_date", "Last Update", true)
   val df1b = readAndCleanData1(spark, "schema_1/iso_date", "Last Update", false)
@@ -77,22 +131,16 @@ object CovidApp extends App {
 
   val combinedDf = df1a.unionByName(df1b).unionByName(df2).unionByName(df3a).unionByName(df3b).cache()
 
-  val countByCountryDf = combinedDf.groupBy(col("Country"), col("Date"))
-    .agg(sum(col("Deaths")).as("Deaths"),
-      sum(col("Confirmed")).as("Confirmed"),
-      sum(col("Recovered")).as("Recovered"))
-    .orderBy(col("Deaths").desc, col("Date"))
+  val dfAggregate = aggregateByCountryByDate(combinedDf)
 
-  val windowSpec = Window.partitionBy("Country").orderBy("Date")
+  val dfDiff = calculateDifferenceBetweenDays(dfAggregate)
 
-  val countByCountryDiffDeathsDf = countByCountryDf
-    .withColumn("Difference Deaths By Day", col("Deaths") - when(lag("Deaths", 1).over(windowSpec).isNull, 0).otherwise(lag("Deaths", 1).over(windowSpec)))
-    .orderBy(desc("Deaths"), desc("Date"))
+  val populationDf = readAndCleanPopulationData(spark)
 
-  val countByCountryDiffDf = countByCountryDiffDeathsDf
-    .withColumn("Difference Confirmed By Day", col("Confirmed") - when(lag("Confirmed", 1).over(windowSpec).isNull, 0).otherwise(lag("Confirmed", 1).over(windowSpec)))
-    .orderBy(desc("Deaths"), desc("Date"))
+  val dfDiffWithPop = dfDiff.join(populationDf, dfDiff.col("Country") === populationDf.col("Country_Name"), "inner").drop("Country_Name")
 
-  countByCountryDiffDf.show()
+  //dfDiffWithPop.show()
+
+  dfDiffWithPop.filter(col("Country") === "France").show()
 }
 
