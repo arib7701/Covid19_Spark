@@ -8,5 +8,6 @@ scalacOptions ++= List("-feature","-deprecation", "-unchecked", "-Xlint")
 
 libraryDependencies ++= Seq(
   "org.apache.spark" %% "spark-core" % "2.3.1",
-  "org.apache.spark" %% "spark-sql" % "2.3.1"
+  "org.apache.spark" %% "spark-sql" % "2.3.1",
+  "org.elasticsearch" %% "elasticsearch-spark-20" % "7.6.2"
 )

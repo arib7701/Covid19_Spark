@@ -1,12 +1,15 @@
 import org.apache.spark.sql.expressions.Window
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.elasticsearch.spark.sql._
 
 object CovidApp extends App {
 
   val spark = SparkSession.builder()
     .appName("CovidApp")
     .master("local")
+    .config("spark.es.node", "127.0.0.1")
+    .config("spark.es.port", "9200")
     .getOrCreate()
 
   def getDateDf(df: DataFrame, flag: Boolean, updateColumnName: String, dateFormat: String): DataFrame = {
@@ -82,19 +85,19 @@ object CovidApp extends App {
     val populationDfFixedUS = populationDf
       .withColumn("Country_Name",
         when(col("name") === "United States", "US")
-              .otherwise(when(col("name") === "Swaziland", "Eswatini")
-                .otherwise(when(col("name") === "Macedonia", "North Macedonia")
-                  .otherwise(when(col("name") === "DR Congo", "Congo (Kinshasa)")
-                    .otherwise(when(col("name") === "Republic of the Congo", "Congo (Brazzaville")
-                          .otherwise(when(col("name") === "Moldova", "Republic of Moldova")
-                              .otherwise(when(col("name") === "North Korea", "Republic of Korea")
-                                .otherwise(when(col("name") === "Ivory Coast", "Cote d'Ivoire")
-                                  .otherwise(when(col("name") === "Czech Republic", "Czechia")
-                                      .otherwise(col("name")))))))))))
-          .drop("name")
+          .otherwise(when(col("name") === "Swaziland", "Eswatini")
+            .otherwise(when(col("name") === "Macedonia", "North Macedonia")
+              .otherwise(when(col("name") === "DR Congo", "Congo (Kinshasa)")
+                .otherwise(when(col("name") === "Republic of the Congo", "Congo (Brazzaville")
+                  .otherwise(when(col("name") === "Moldova", "Republic of Moldova")
+                    .otherwise(when(col("name") === "North Korea", "Republic of Korea")
+                      .otherwise(when(col("name") === "Ivory Coast", "Cote d'Ivoire")
+                        .otherwise(when(col("name") === "Czech Republic", "Czechia")
+                          .otherwise(col("name")))))))))))
+      .drop("name")
 
-          // Convert column name
-          populationDfFixedUS.withColumnRenamed("pop2020", "Population")
+    // Convert column name
+    populationDfFixedUS.withColumnRenamed("pop2020", "Population")
   }
 
   def aggregateByCountryByDate(df: DataFrame): DataFrame = {
@@ -110,9 +113,9 @@ object CovidApp extends App {
 
     val windowSpec = Window.partitionBy("Country").orderBy("Date")
 
-    df.withColumn("Difference Deaths By Day", col("Deaths") - when(lag("Deaths", 1).over(windowSpec).isNull, 0).otherwise(lag("Deaths", 1).over(windowSpec)))
-      .withColumn("Difference Confirmed By Day", col("Confirmed") - when(lag("Confirmed", 1).over(windowSpec).isNull, 0).otherwise(lag("Confirmed", 1).over(windowSpec)))
-      .withColumn("Difference Recovered By Day", col("Recovered") - when(lag("Recovered", 1).over(windowSpec).isNull, 0).otherwise(lag("Recovered", 1).over(windowSpec)))
+    df.withColumn("diffDeathsByDay", col("Deaths") - when(lag("Deaths", 1).over(windowSpec).isNull, 0).otherwise(lag("Deaths", 1).over(windowSpec)))
+      .withColumn("diffConfirmedByDay", col("Confirmed") - when(lag("Confirmed", 1).over(windowSpec).isNull, 0).otherwise(lag("Confirmed", 1).over(windowSpec)))
+      .withColumn("diffRecoveredByDay", col("Recovered") - when(lag("Recovered", 1).over(windowSpec).isNull, 0).otherwise(lag("Recovered", 1).over(windowSpec)))
       .orderBy(desc("Deaths"), desc("Date"))
   }
 
@@ -121,10 +124,10 @@ object CovidApp extends App {
     covidDf.join(popDf, covidDf.col("Country") === popDf.col("Country_Name"), "inner").drop("Country_Name")
   }
 
-  def calculateCasesPerMillion(df: DataFrame) : DataFrame = {
+  def calculateCasesPerMillion(df: DataFrame): DataFrame = {
 
-    df.withColumn("Deaths Cases Per 1M", round(col("Deaths") / col("Population") * 1000, 3))
-      .withColumn("Confirmed Cases Per 1M", round(col("Confirmed") / col("Population") * 1000, 3))
+    df.withColumn("deathsCasesPer1M", round(col("Deaths") / col("Population") * 1000, 3))
+      .withColumn("confirmedCasesPer1M", round(col("Confirmed") / col("Population") * 1000, 3))
   }
 
   val df1a = readAndCleanData1(spark, "schema_1/no_iso_date", "Last Update", true)
@@ -145,6 +148,7 @@ object CovidApp extends App {
 
   val dfDiffWithCasesPerMillions = calculateCasesPerMillion(dfDiffWithPop)
 
-  dfDiffWithCasesPerMillions.show()
+  dfDiffWithCasesPerMillions.saveToEs("covid/stats")
+
 }
 
