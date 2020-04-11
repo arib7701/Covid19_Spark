@@ -128,9 +128,9 @@ object CovidApp extends App {
 
     val concatCoordinates = localisationDfFixedNameCountries
       .withColumn("coordinates",
-      struct(
-        col("latitude").cast(StringType).as("lat"),
-        col("longitude").cast(StringType).as("lon")))
+        struct(
+          col("latitude").cast(StringType).as("lat"),
+          col("longitude").cast(StringType).as("lon")))
       .drop("latitude", "longitude")
 
     concatCoordinates
@@ -166,6 +166,29 @@ object CovidApp extends App {
       .withColumn("confirmedCasesPer1M", round(col("Confirmed") / col("Population") * 1000, 3))
   }
 
+  def convertCountryToESMap(df: DataFrame): DataFrame = {
+
+    // Convert Country Name to match Elastic Search Map
+    val elasticSearchNameCountries = df
+      .withColumn("Country_Name",
+        when(col("Country") === "US", "United States")
+          .otherwise(when(col("Country") === "Libya", "Libya Arab Jamahiriya")
+            .otherwise(when(col("Country") === "Macedonia [FYROM]", "North Macedonia")
+              .otherwise(when(col("Country") === "Congo (Kinshasa)", "Congo")
+                .otherwise(when(col("Country") === "Congo (Brazzaville)", "Democratic Republic of the Congo")
+                  .otherwise(when(col("Country") === "Tanzania", "United Republic of Tanzania")
+                    .otherwise(when(col("Country") === "Republic of Korea", "Korea, Democratic People's Republic of")
+                      .otherwise(when(col("Country") === "South Korea", "Korea, Republic of")
+                        .otherwise(when(col("Country") === "Syria", "Syrian Arab Republic")
+                          .otherwise(when(col("Country") === "Czechia", "Czech Republic")
+                            .otherwise(when(col("Country") === "Iran", "Iran (Islamic Republic of)")
+                              .otherwise(when(col("Country") === "Laos", "Laos People's Democratic Republic")
+                                .otherwise(when(col("Country") === "North Macedonia", "The former Yugoslav Republic of Macedonia")
+                                  .otherwise(col("Country")))))))))))))))
+          .drop("Country")
+    elasticSearchNameCountries
+  }
+
   val df1a = readAndCleanData1(spark, "schema_1/no_iso_date", "Last Update", true)
   val df1b = readAndCleanData1(spark, "schema_1/iso_date", "Last Update", false)
   val df2 = readAndCleanData1(spark, "schema_2", "Last Update", false)
@@ -188,6 +211,8 @@ object CovidApp extends App {
 
   val dfDiffWithLocalisation = joinCovidAndOtherCountryData(dfDiffWithCasesPerMillions, localisationDf)
 
-  dfDiffWithLocalisation.saveToEs("covid")
+  val dfWithESMapCountryName = convertCountryToESMap(dfDiffWithLocalisation)
+
+  dfWithESMapCountryName.saveToEs("covid")
 }
 
