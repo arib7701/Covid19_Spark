@@ -124,7 +124,11 @@ object CovidApp extends App {
                         .otherwise(when(col("name") === "Czech Republic", "Czechia")
                           .otherwise(col("name")))))))))))
       .drop("name")
-    localisationDfFixedNameCountries
+
+    val concatCoordinates = localisationDfFixedNameCountries.withColumn("coordinates", struct(col("latitude").as("lat"), col("longitude").as("lon")))
+      .drop("latitude", "longitude")
+
+    concatCoordinates
   }
 
   def aggregateByCountryByDate(df: DataFrame): DataFrame = {
