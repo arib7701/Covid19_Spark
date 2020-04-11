@@ -1,5 +1,6 @@
 import org.apache.spark.sql.expressions.Window
 import org.apache.spark.sql.functions._
+import org.apache.spark.sql.types.StringType
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.elasticsearch.spark.sql._
 
@@ -125,7 +126,11 @@ object CovidApp extends App {
                           .otherwise(col("name")))))))))))
       .drop("name")
 
-    val concatCoordinates = localisationDfFixedNameCountries.withColumn("coordinates", struct(col("latitude").as("lat"), col("longitude").as("lon")))
+    val concatCoordinates = localisationDfFixedNameCountries
+      .withColumn("coordinates",
+      struct(
+        col("latitude").cast(StringType).as("lat"),
+        col("longitude").cast(StringType).as("lon")))
       .drop("latitude", "longitude")
 
     concatCoordinates
@@ -183,6 +188,6 @@ object CovidApp extends App {
 
   val dfDiffWithLocalisation = joinCovidAndOtherCountryData(dfDiffWithCasesPerMillions, localisationDf)
 
-  dfDiffWithLocalisation.saveToEs("covid/stats")
+  dfDiffWithLocalisation.saveToEs("covid")
 }
 
