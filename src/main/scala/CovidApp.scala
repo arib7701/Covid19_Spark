@@ -82,7 +82,7 @@ object CovidApp extends App {
     val populationDf = populationDfRaw.select(col("name"), col("pop2020"))
 
     // Convert Country Name to match Covid Data
-    val populationDfFixedUS = populationDf
+    val populationDfFixedNameCountries = populationDf
       .withColumn("Country_Name",
         when(col("name") === "United States", "US")
           .otherwise(when(col("name") === "Swaziland", "Eswatini")
@@ -97,7 +97,34 @@ object CovidApp extends App {
       .drop("name")
 
     // Convert column name
-    populationDfFixedUS.withColumnRenamed("pop2020", "Population")
+    populationDfFixedNameCountries.withColumnRenamed("pop2020", "Population")
+  }
+
+  def readAndCleanLocalisationData(spark: SparkSession): DataFrame = {
+
+    val localisationDfRaw = spark.read
+      .option("inferSchema", "true")
+      .option("header", "true")
+      .csv("./data/LocalisationData/geolocation_country.csv")
+      .cache()
+
+    val localisationDf = localisationDfRaw.select(col("name"), col("latitude"), col("longitude"))
+
+    // Convert Country Name to match Covid Data
+    val localisationDfFixedNameCountries = localisationDf
+      .withColumn("Country_Name",
+        when(col("name") === "United States", "US")
+          .otherwise(when(col("name") === "Swaziland", "Eswatini")
+            .otherwise(when(col("name") === "Macedonia [FYROM]", "North Macedonia")
+              .otherwise(when(col("name") === "Congo [DRC]", "Congo (Kinshasa)")
+                .otherwise(when(col("name") === "Congo [Republic]", "Congo (Brazzaville")
+                  .otherwise(when(col("name") === "Moldova", "Republic of Moldova")
+                    .otherwise(when(col("name") === "North Korea", "Republic of Korea")
+                      .otherwise(when(col("name") === "Côte d'Ivoire", "Cote d'Ivoire")
+                        .otherwise(when(col("name") === "Czech Republic", "Czechia")
+                          .otherwise(col("name")))))))))))
+      .drop("name")
+    localisationDfFixedNameCountries
   }
 
   def aggregateByCountryByDate(df: DataFrame): DataFrame = {
@@ -119,9 +146,9 @@ object CovidApp extends App {
       .orderBy(desc("Deaths"), desc("Date"))
   }
 
-  def joinCovidAndPopulationData(covidDf: DataFrame, popDf: DataFrame): DataFrame = {
+  def joinCovidAndOtherCountryData(covidDf: DataFrame, otherDf: DataFrame): DataFrame = {
 
-    covidDf.join(popDf, covidDf.col("Country") === popDf.col("Country_Name"), "inner").drop("Country_Name")
+    covidDf.join(otherDf, covidDf.col("Country") === otherDf.col("Country_Name"), "inner").drop("Country_Name")
   }
 
   def calculateCasesPerMillion(df: DataFrame): DataFrame = {
@@ -144,11 +171,14 @@ object CovidApp extends App {
 
   val populationDf = readAndCleanPopulationData(spark)
 
-  val dfDiffWithPop = joinCovidAndPopulationData(dfDiff, populationDf)
+  val dfDiffWithPop = joinCovidAndOtherCountryData(dfDiff, populationDf)
 
   val dfDiffWithCasesPerMillions = calculateCasesPerMillion(dfDiffWithPop)
 
-  dfDiffWithCasesPerMillions.saveToEs("covid/stats")
+  val localisationDf = readAndCleanLocalisationData(spark)
 
+  val dfDiffWithLocalisation = joinCovidAndOtherCountryData(dfDiffWithCasesPerMillions, localisationDf)
+
+  dfDiffWithLocalisation.saveToEs("covid/stats")
 }
 
